@@ -1,0 +1,144 @@
+section .data
+    buffer      times 32 db 0      ; буфер для введення рядка
+    newline     db 10, 0           ; символ нового рядка (\n)
+    minus_sign  db '-', 0          ; символ мінуса
+
+section .text
+    global _start
+
+_start:
+    ; =============================================
+    ; 1. Читання рядка з консолі
+    ; =============================================
+    mov eax, 3                    ; sys_read
+    mov ebx, 0                    ; stdin (ввід з клавіатури)
+    mov ecx, buffer
+    mov edx, 31                   ; максимум 31 символ
+    int 0x80
+
+    mov byte [buffer + eax], 0    ; додаємо нуль-термінатор в кінець рядка
+
+    ; =============================================
+    ; 2. Конвертуємо рядок у число (result в AX)
+    ; =============================================
+    call string_to_int
+
+    ; =============================================
+    ; 3. Виводимо число назад на консоль
+    ; =============================================
+    call print_int
+
+    ; Виводимо новий рядок
+    mov eax, 4
+    mov ebx, 1
+    mov ecx, newline
+    mov edx, 1
+    int 0x80
+
+    ; Завершення програми
+    mov eax, 1                    ; sys_exit
+    xor ebx, ebx
+    int 0x80
+
+
+; =============================================
+; Підпрограма: string_to_int
+; Вхід:  рядок у buffer
+; Вихід: число у регістрі EAX (і AX)
+; =============================================
+string_to_int:
+    push ebx
+    push ecx
+    push edx
+
+    xor eax, eax                  ; результат = 0
+    xor ebx, ebx                  ; прапор від'ємного числа (0 = додатне)
+    mov ecx, buffer
+
+    ; Перевіряємо, чи є знак мінус
+    cmp byte [ecx], '-'
+    jne .parse_loop
+    mov ebx, 1                    ; встановлюємо прапор мінуса
+    inc ecx                       ; пропускаємо символ '-'
+
+.parse_loop:
+    movzx edx, byte [ecx]         ; беремо поточний символ
+
+    cmp edx, 10                   ; якщо \n — кінець
+    je .finish
+    cmp edx, 0                    ; якщо нуль-термінатор — кінець
+    je .finish
+    cmp edx, '0'
+    jl .finish
+    cmp edx, '9'
+    jg .finish
+
+    ; result = result * 10 + цифра
+    imul eax, eax, 10
+    sub edx, '0'
+    add eax, edx
+
+    inc ecx
+    jmp .parse_loop
+
+.finish:
+    ; Якщо число було від'ємне — змінюємо знак
+    test ebx, ebx
+    jz .done
+    neg eax
+
+.done:
+    pop edx
+    pop ecx
+    pop ebx
+    ret
+
+
+; =============================================
+; Підпрограма: print_int
+; Вхід: число у EAX
+; =============================================
+print_int:
+    push eax
+    push ebx
+    push ecx
+    push edx
+
+    mov ecx, buffer + 31          ; починаємо з кінця буфера
+    mov byte [ecx], 0             ; нуль-термінатор
+    mov ebx, 10
+
+    ; Перевіряємо знак
+    test eax, eax
+    jns .convert_loop
+    neg eax                       ; робимо число додатним
+    push eax
+    mov eax, 4
+    mov ebx, 1
+    mov ecx, minus_sign
+    mov edx, 1
+    int 0x80                      ; виводимо '-'
+    pop eax
+
+.convert_loop:
+    xor edx, edx
+    div ebx                       ; ділимо на 10
+    add dl, '0'                   ; перетворюємо залишок у ASCII
+    dec ecx
+    mov [ecx], dl
+
+    test eax, eax
+    jnz .convert_loop
+
+    ; Виводимо число
+    mov eax, 4
+    mov ebx, 1
+    mov edx, buffer + 32
+    sub edx, ecx                  ; обчислюємо довжину рядка
+    int 0x80
+
+    pop edx
+    pop ecx
+    pop ebx
+    pop eax
+    ret
